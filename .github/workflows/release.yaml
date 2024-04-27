@@ -83,8 +83,8 @@ jobs:
 
       - name: Tag release
         run: |
-          git config --global user.name "anchoreci"
-          git config --global user.email "anchoreci@users.noreply.github.com"
+          git config --global user.name "khulnasoft-bot"
+          git config --global user.email "khulnasoft-bot@users.noreply.github.com"
           git tag -a ${{ github.event.inputs.version }} -m "Release ${{ github.event.inputs.version }}"
           git push origin --tags
         env:
