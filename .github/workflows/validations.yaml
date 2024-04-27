@@ -1,0 +1,116 @@
+name: "Validations"
+on:
+  # needed for publishing commit images on the main branch
+  push:
+    branches:
+      - main
+
+  # needed when running from forks
+  pull_request:
+
+jobs:
+
+  # note: the name for this check is referenced in release.yaml, do not change here without changing there
+  Static-Analysis:
+    name: "Static Analysis"
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b #v4.1.4
+        with:
+          # in order to properly resolve the version from git
+          fetch-depth: 0
+
+      - name: Bootstrap environment
+        uses: ./.github/actions/bootstrap
+
+      - name: Run static analysis
+        run: poetry run make static-analysis
+
+      - name: Ensure quality gate tools are properly configured
+        run: |
+          cd tests/quality && make validate-test-tool-versions
+
+  Test:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        # note: this is not a single source of truth (this is also in the tox.ini)
+        python:
+          - version: '3.9'
+            toxEnv: py39
+
+          - version: '3.10'
+            toxEnv: py310
+
+          - version: '3.11'
+            toxEnv: py311
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b #v4.1.4
+        with:
+          # in order to properly resolve the version from git
+          fetch-depth: 0
+
+      - name: Bootstrap environment
+        uses: ./.github/actions/bootstrap
+        with:
+          python-version: ${{ matrix.python.version }}
+
+      - name: Run unit tests
+        run: poetry run tox -e ${{ matrix.python.toxEnv }}
+
+      - name: Build assets
+        run: poetry run make build
+
+  # this is to help facilitate ensuring all checks have run with the checks API for release
+  # see https://github.com/orgs/community/discussions/26822#discussioncomment-3305794
+  # as well as the release.yaml workflow
+  Test-Gate:
+    if: ${{ always() }}
+    runs-on: ubuntu-22.04
+    name: Test Gate
+    needs: [test]
+    steps:
+      - run: |
+          result="${{ needs.Test.result }}"
+          if [[ $result == "success" || $result == "skipped" ]]; then
+            exit 0
+          else
+            exit 1
+          fi
+
+  Publish-PreProd:
+    runs-on: ubuntu-22.04
+    needs: [Static-Analysis, Test]
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      # package write permission is needed for publishing commit images
+      packages: write
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b #v4.1.4
+        with:
+          # in order to properly resolve the version from git
+          fetch-depth: 0
+
+      - name: Bootstrap environment
+        uses: ./.github/actions/bootstrap
+
+      - name: Login to ghcr.io
+        run: |
+          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io --username ${{ github.actor }} --password-stdin
+
+      - name: Build assets
+        run: poetry run make build
+
+      - name: Publish commit image
+        run: make ci-publish-commit
+
+      - name: Publish to test PyPI
+        run: make ci-publish-testpypi
+        env:
+          # note: "..._TESTPYPI" suffix should match the name of the testpypi repository (see the Makefile target)
+          POETRY_PYPI_TOKEN_TESTPYPI: ${{ secrets.TEST_PYPI_TOKEN }}
