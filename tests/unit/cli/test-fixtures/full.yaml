@@ -1,0 +1,68 @@
+root: "/tmp/all-the-dataz"
+log:
+  level: trace
+  slim: true
+  show_timestamp: true
+  show_level: false
+providers:
+  alpine:
+    request_timeout: 20
+    runtime: &runtime
+      on_error:
+        action: skip
+        retry_count: 9
+        retry_delay: 12
+        input: delete
+        results: delete
+      existing_results: keep
+      existing_input: keep
+  amazon:
+    runtime: *runtime
+    request_timeout: 20
+    security_advisories:
+      42: "https://alas.aws.amazon.com/AL2/alas-42.rss"
+  chainguard:
+    runtime: *runtime
+    request_timeout: 20
+  debian:
+    runtime: *runtime
+    request_timeout: 20
+    releases:
+      jinx: 87
+  github:
+    runtime: *runtime
+    request_timeout: 20
+    api_url: https://api.gitlab.com/graphql
+    token: env:SOMETHING_MADE_UP
+  nvd:
+    runtime: *runtime
+    request_timeout: 20
+    overrides_enabled: true
+    overrides_url: https://github.com/anchore/nvd-data-overrides/SOMEWHEREELSE/main.tar.gz
+  oracle:
+    runtime: *runtime
+    request_timeout: 20
+  rhel:
+    runtime: *runtime
+    request_timeout: 20
+    parallelism: 7
+    full_sync_interval: 22
+    skip_namespaces:
+      - rhel:8
+  sles:
+    runtime: *runtime
+    request_timeout: 20
+    allow_versions:
+      - 13
+  ubuntu:
+    runtime: *runtime
+    request_timeout: 20
+    additional_versions:
+      "zzz": "24.24"
+    enable_rev_history: true
+    parallelism: 25
+    git_url: "https://xyz.abc"
+    git_branch: "yoda"
+  wolfi:
+    runtime: *runtime
+    request_timeout: 20

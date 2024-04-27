@@ -24,7 +24,7 @@ runs:
     - name: Archive the provider state (${{ inputs.provider }})
       if: ${{ failure() }}
       shell: bash
-      run: tar -czvf qg-capture-state-${{ inputs.provider }}.tar.gz -C tests/quality --exclude tools --exclude labels .yardstick.yaml .yardstick
+      run: tar -czvf qg-capture-state-${{ inputs.provider }}.tar.gz -C tests/quality --exclude tools --exclude labels .vulnstick.yaml .vulnstick
 
     - name: Upload the provider state archive (${{ inputs.provider }})
       if: ${{ failure() }}
@@ -52,10 +52,10 @@ runs:
         unzip $ARCHIVE_NAME && tar -xzf $ARCHIVE_BASENAME.tar.gz
         \`\`\`
 
-        Now you can debug the provider with yardstick:
+        Now you can debug the provider with vulnstick:
         \`\`\`bash
         poetry shell
-        yardstick result list
-        yardstick label explore
+        vulnstick result list
+        vulnstick label explore
         \`\`\`
         EOF

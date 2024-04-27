@@ -1,0 +1,163 @@
+name: "Release"
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: tag the latest commit on main with the given version (prefixed with v)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gate:
+    environment: release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b #v4.1.4
+
+      - name: Check if tag already exists
+        # note: this will fail if the tag already exists
+        run: |
+          git tag ${{ github.event.inputs.version }}
+
+      # we don't want to release commits that have been pushed and tagged, but not necessarily merged onto main
+      - name: Ensure tagged commit is on main
+        run: |
+          echo "Tag: ${GITHUB_REF##*/}"
+          git fetch origin main
+          git merge-base --is-ancestor ${GITHUB_REF##*/} origin/main && echo "${GITHUB_REF##*/} is a commit on main!"
+
+      - name: Check static analysis results
+        uses: fountainhead/action-wait-for-check@5a908a24814494009c4bb27c242ea38c93c593be #v1.1.1
+        id: static-analysis
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # This check name is defined as the github action job name (in .github/workflows/validations.yaml)
+          checkName: "Static Analysis"
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Check test results
+        uses: fountainhead/action-wait-for-check@5a908a24814494009c4bb27c242ea38c93c593be #v1.1.1
+        id: test
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # This check name is defined as the github action job name (in .github/workflows/validations.yaml)
+          checkName: "Test Gate"
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Check nightly quality gate results
+        uses: fountainhead/action-wait-for-check@5a908a24814494009c4bb27c242ea38c93c593be #v1.2.0
+        id: nightly-quality-gate
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # This check name is defined as the github action job name (in .github/workflows/nightly-quality-gate.yaml)
+          checkName: "Nightly-Quality-Gate"
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # If there is no result in 10 seconds, assume it hasn't run yet
+          timeoutSeconds: 10
+          intervalSeconds: 3
+
+      - name: Release quality gate
+        if: steps.static-analysis.conclusion != 'success' || steps.test.conclusion != 'success' || steps.nightly-quality-gate.conclusion != 'success'
+        run: |
+          echo "Static Analysis Status: ${{ steps.static-analysis.conclusion }}"
+          echo "Test Status: ${{ steps.test.conclusion }}"
+          echo "Nightly Quality Gate Status: ${{ steps.nightly-quality-gate.conclusion }}"
+          false
+
+  tag:
+    needs:
+      - quality-gate
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      packages: write
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b #v4.1.4
+        with:
+          # in order to properly resolve the version from git
+          fetch-depth: 0
+
+      - name: Tag release
+        run: |
+          git config --global user.name "anchoreci"
+          git config --global user.email "anchoreci@users.noreply.github.com"
+          git tag -a ${{ github.event.inputs.version }} -m "Release ${{ github.event.inputs.version }}"
+          git push origin --tags
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-pypi:
+    needs:
+      - tag
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b #v4.1.4
+        with:
+          # in order to properly resolve the version from git
+          fetch-depth: 0
+
+      - name: Bootstrap environment
+        uses: ./.github/actions/bootstrap
+
+      - name: Publish to PyPI
+        run: make ci-publish-pypi
+        env:
+          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.VULNLIST_PYPI_TOKEN }}
+
+  release-docker:
+    needs:
+      - tag
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b #v4.1.4
+        with:
+          # in order to properly resolve the version from git
+          fetch-depth: 0
+
+      - name: Bootstrap environment
+        uses: ./.github/actions/bootstrap
+
+      - name: Login to ghcr.io
+        run: |
+          echo ${{ secrets.GITHUB_TOKEN }} | oras login ghcr.io --username ${{ github.actor }} --password-stdin
+          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io --username ${{ github.actor }} --password-stdin
+
+      - name: Promote commit image to release
+        run: |
+          make ci-promote-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-github:
+    needs:
+      - tag
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      packages: write
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b #v4.1.4
+        with:
+          # in order to properly resolve the version from git
+          fetch-depth: 0
+
+      - name: Bootstrap environment
+        uses: ./.github/actions/bootstrap
+
+      - name: Create github release
+        run: |
+          make changelog
+          gh release create ${{ github.event.inputs.version }} -F CHANGELOG.md -t ${{ github.event.inputs.version }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

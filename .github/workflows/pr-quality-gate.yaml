@@ -1,0 +1,99 @@
+name: "PR Quality Gate"
+on:
+  pull_request:
+    types:
+      # default types...
+      - opened
+      - synchronize
+      - reopened
+      # custom types...
+      - labeled
+
+jobs:
+
+  select-providers:
+    runs-on: ubuntu-22.04
+    outputs:
+      providers: ${{ steps.determine-providers.outputs.providers }}
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b #v4.1.4
+        with:
+          # in order to properly resolve the version from git
+          fetch-depth: 0
+
+      - name: Bootstrap environment
+        uses: ./.github/actions/bootstrap
+        with:
+          tools: false
+
+      - name: Determine providers
+        id: determine-providers
+        run: |
+          # be nice to folks troubleshooting in CI...
+          cd tests/quality
+          poetry run make show-changes
+
+          # determine which providers to run (to later populate the matrix)
+          content=`poetry run make select-providers`
+          echo $content
+          echo "providers=$content" >> $GITHUB_OUTPUT
+
+  validate-provider:
+    runs-on: ubuntu-22.04
+    needs: select-providers
+    if: contains(github.event.pull_request.labels.*.name, 'run-pr-quality-gate')
+
+    strategy:
+      matrix:
+        provider: ${{fromJson(needs.select-providers.outputs.providers)}}
+      fail-fast: false
+
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b #v4.1.4
+        with:
+          # in order to properly resolve the version from git
+          fetch-depth: 0
+          # we need submodules for the quality gate to work (requires vulnerability-match-labels repo)
+          submodules: true
+
+      - name: Bootstrap environment
+        uses: ./.github/actions/bootstrap
+        with:
+          go: true
+
+      - name: Run quality gate
+        uses: ./.github/actions/quality-gate
+        with:
+          provider: ${{ matrix.provider }}
+        env:
+          # needed as a secret for the github provider
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  evaluate-quality-gate:
+    runs-on: ubuntu-22.04
+    needs:
+     - validate-provider
+     - select-providers
+    if: ${{ always() }}
+    steps:
+      - run: |
+          echo "Validations Status: ${{ needs.validate-provider.result }}"
+          echo "Providers that require testing: ${{ needs.select-providers.outputs.providers }}"
+          echo
+          if [ '${{ needs.select-providers.outputs.providers }}' == '[]' ]; then
+            echo "🟢 Quality gate passed! (no providers changed)"
+            exit 0
+          fi
+          if [ "${{ needs.validate-provider.result }}" != "success" ]; then
+            echo "🔴 Quality gate FAILED! 😭"
+            echo
+            echo "This could happen for a couple of reasons:"
+            echo "  - A provider test failed, in which case see the logs in previous jobs for more details"
+            echo "  - A required provider test was skipped. You might need to add the 'run-pr-quality-gate' label to your PR to prevent skipping the test."
+            exit 1
+          fi
+          echo "🟢 Quality gate passed! (all tests passed)"
