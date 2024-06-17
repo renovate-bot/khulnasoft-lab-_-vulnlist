@@ -2258,8 +2258,8 @@ tabulate = "^0.9.0"
 [package.source]
 type = "git"
 url = "https://github.com/khulnasoft-lab/vulnstick"
-reference = "v0.9.2"
-resolved_reference = "a130b9dbb99c6f7b196c6010de2f3db0a7ccac12"
+reference = "f8c1b5fc540aa169a0a704b90879b8e3c2ee6527"
+resolved_reference = "f8c1b5fc540aa169a0a704b90879b8e3c2ee6527"
 
 [[package]]
 name = "wcwidth"
@@ -2497,4 +2497,4 @@ cffi = ["cffi (>=1.11)"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9"
-content-hash = "05e020fb17423168c2220ecdd675834bdd0830131c68ce2cace8ed521d225537"
+content-hash = "7fb84129e2395657171b9108deb661810459595aafd93885d304e6c148ad74ed"
