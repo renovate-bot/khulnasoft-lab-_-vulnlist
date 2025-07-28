@@ -55,7 +55,7 @@ runs:
         poetry self add "poetry-dynamic-versioning[plugin]"
 
     - name: Cache Poetry virtualenv
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       if: inputs.use-poetry-cache == 'true'
       id: cache
       with:
@@ -73,7 +73,7 @@ runs:
     - name: Restore tool cache
       id: tool-cache
       if: inputs.tools == 'true'
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ${{ github.workspace }}/.tmp
         key: ${{ inputs.cache-key-prefix }}-${{ runner.os }}-tool-${{ hashFiles('Makefile') }}
@@ -95,7 +95,7 @@ runs:
 
     - name: Restore tox cache
       id: cache-tox
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: .tox
         key: ${{ inputs.cache-key-prefix }}-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('pyproject.toml') }}-${{ hashFiles('tox.ini') }}
